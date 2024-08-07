@@ -1,0 +1,704 @@
+import os, sys, time, shutil
+from psychopy.hardware import keyboard
+from psychopy import core, visual, gui, data, event
+import numpy, random
+
+### eyetracking
+from psychopy import iohub, hardware
+import psychopy.iohub as io
+from psychopy.iohub import launchHubServer
+###
+
+# Open graphical user interface to collect participant data
+gui = gui.Dlg()
+gui.addField("Participant ID:")
+gui.addField('Age:')
+gui.addField('Gender:')
+gui.addField('Handedness:')
+gui.show()
+
+subj_id = gui.data[0]
+age = gui.data[1]
+gender = gui.data[2]
+handedness = gui.data[3]
+experimentName = "INNER" 
+
+
+
+# #### checking if the file with the same name already exists
+if os.path.exists(subj_id+ '_INbeh.tsv'):
+    sys.exit("File " + subj_id+ '_INbeh.tsv' + " already exists!")
+    
+# ### Setting the clock
+clock = core.Clock()
+date_time_Now = time.strftime("%Y.%m.%d_%H:%M:%S")
+
+# open a new file instance for data storage
+log = open(subj_id + '_INbeh.tsv', 'w')
+# define a header
+header = ['subject_ID', 'age', 'gender', 'handedness', 'date&time', 'experiment', 
+            'block',  
+            'trial#',
+            'FIXdur', 'BLACKmoveDur', 'clrChangeT', 'RTLK', 'LKrelT', 'RTRK', 'RKrelGT',
+            'RAT', 'AT', 'correct', 'keyPressed', 'KeyPressGT', 'fingseq',
+            'stimSide', 'stimMovDir', 'stimColor', 'spatial', 'motion', 'breakVal']
+# make all values in the header into strings
+line = map(str, header)
+# join all string values into one string, separated by tabs ('\t')
+line = '\t'.join(line)
+# add a newline ('\n') to the string 
+line += '\n'
+# write the header to the log file
+log.write(line)
+
+
+# Create a window
+#myWin = visual.Window(color = 'gray', units = 'pix', size = (1000, 1000), pos = (1160 , 0))
+myWin = visual.Window(color = 'gray', units = 'pix', fullscr = True, size = (5120, 2880))
+
+###
+# --- Setup input devices ---
+ioConfig = {}
+
+# Setup eyetracking
+ioConfig['eyetracker.hw.tobii.EyeTracker'] = {
+    'name': 'tracker',
+    'model_name': 'Tobii Pro X3-120 EPU',
+    'serial_number': 'X3120-030118632525',
+    'runtime_settings': {
+        'sampling_rate': 120.0,
+    }
+}
+# Setup iohub keyboard
+ioConfig['Keyboard'] = dict(use_keymap='psychopy')
+
+ioSession = '1'
+filename = subj_id
+ioServer = io.launchHubServer(window=myWin, experiment_code='untitled', session_code=ioSession, datastore_name=filename, **ioConfig)
+eyetracker = ioServer.getDevice('tracker')
+
+# define target for calibration
+calibrationTarget = visual.TargetStim(myWin, 
+    name='calibrationTarget',
+    radius=10, fillColor='', borderColor='black', lineWidth=2.0,
+    innerRadius=10, innerFillColor='green', innerBorderColor='black', innerLineWidth=2.0,
+    colorSpace='rgb', units=None
+)
+# define parameters for calibration
+calibration = hardware.eyetracker.EyetrackerCalibration(myWin, 
+    eyetracker, calibrationTarget,
+    units=None, colorSpace='rgb',
+    progressMode='time', targetDur=1.5, expandScale=1.5,
+    targetLayout='FIVE_POINTS', randomisePos=True, textColor='white',
+    movementAnimation=True, targetDelay=1.0
+)
+# define region of interest
+roi = visual.Circle(myWin,
+    radius = 100, pos=(0, 0),
+    fillColor = None, lineColor = 'black')
+#
+wzrok_centrum = visual.TextStim(myWin,text='Utrzymuj wzrok w centrum!', color='black', height=40)
+
+###
+# Create stimulus
+disc_1 = visual.Circle(myWin, radius = 30, pos=(0, 0), fillColor = (-1,-1,-1), colorSpace = 'rgb', lineColor = None)
+
+# Create fixation point
+circle1 = visual.Circle(myWin, radius = 12, pos=(0, 0), fillColor = (-1, -1, -1), colorSpace = 'rgb', lineColor = None)
+circle2 = visual.Circle(myWin, radius = 2, pos=(0, 0), fillColor = (-1, -1, -1), colorSpace = 'rgb', lineColor = None)
+lineY = visual.Rect(myWin, units = 'pix', size = (5, 25), fillColor= 'gray',  pos = (0, 0), lineColor = None)
+lineX = visual.Rect(myWin, units = 'pix', size = (25, 5), fillColor= 'gray',  pos = (0, 0), lineColor = None)
+
+# Create instructions and feedbacks
+press_txt = 'wcisnij i trzymaj X i Y'
+press_instr = visual.TextStim(myWin,text=press_txt, color='black', height=40)
+
+NR_feedback = visual.TextStim(myWin,text='Brak reakcji!', color='black', height=40)
+
+instr_txt = '- wcisnij i trzymaj X i Y \n\
+- utrzymuj wzrok w centrum i nie mrugaj! \n\
+- kiedy kolko zmieni kolor wykonaj ruch jedna reka \n\
+i wcisnij odpowiedni przycisk \n\
+- zwolnij wszytskie klawisze; mozna mrugac : ) \n\n\
+wcisnij dowolny klawisz, zeby zaczac '
+inststim = visual.TextStim(myWin, text=instr_txt, color='black', height=40)
+
+zluzuj_text = 'zwolnij wszystkie klawisze'
+zluzuj_txt= visual.TextStim(myWin,text=zluzuj_text, color='black', height=40)
+
+za_szybko = visual.TextStim(myWin,text='Za szybko!', color='black', height=40)
+koniec = visual.TextStim(myWin,text='Koniec - powiedzial zaskroniec', color='black', height=40)
+
+blok_tekst = '\n\n\
+# ---><--- #\n\n\
+wcisnij dowolny klawisz, zeby zaczac'
+blokOGOLNA = visual.TextStim(myWin,text=blok_tekst, color='black', height=40, wrapWidth = 750)
+
+niebieski = visual.TextStim(myWin,text='NIEBIESKI', color='blue', height=40)
+zolty = visual.TextStim(myWin,text='ZOLTY', color='yellow', height=40)
+
+koniecBloku = visual.TextStim(myWin,text='Koniec bloku\n\
+wcisnij dowolny klawisz aby przejsc dalej',
+color='black', height=40)
+
+# Hide mouse
+event.Mouse(visible=False)
+
+# Present 1st instruction
+inststim.draw()
+myWin.flip()
+event.waitKeys(maxWait=float('inf'), 
+    keyList=None, 
+    timeStamped=True)
+
+kb = keyboard.Keyboard()
+
+
+clock = core.Clock()
+
+# Define interstimulus intervals
+itis = [90, 120]
+
+# Define keys
+CL = 'shift+k'    #central left key
+CR = 'a'    #central right key
+LK = '1'    #left key
+RK = 'g'    #right key
+
+conditions = [{'side': 'left', 'direction': 'left', 'color': 'yellow'},
+            {'side': 'left', 'direction': 'left', 'color': 'blue'},
+            {'side': 'left', 'direction': 'right', 'color': 'yellow'},
+            {'side': 'left', 'direction': 'right', 'color': 'blue'},
+            {'side': 'right', 'direction': 'left', 'color': 'yellow'},
+            {'side': 'right', 'direction': 'left', 'color': 'blue'},
+            {'side': 'right', 'direction': 'right', 'color': 'yellow'},
+            {'side': 'right', 'direction': 'right', 'color': 'blue'}]
+
+
+############## BLOCKS
+# LBRY Left_Blue__Right_Yellow
+# LYRB Left_Yellow__Right_Blue
+
+blocks = []
+blockTypes = [{'type': 'LBRY'}, {'type' : 'LYRB'}]
+blocks = blockTypes
+
+random.shuffle(blocks)
+
+
+for b in blocks:
+
+    ###
+    # run calibration
+    calibration.run()
+    # eyetracker start recording
+    eyetracker.setRecordingState(True)
+    ###
+    
+    if b['type'] == 'LBRY':
+        niebieski.setPos([-250, 0])
+        zolty.setPos([250, 0])
+        niebieski.draw()
+        zolty.draw()
+        blokOGOLNA.draw()
+        #el_tracker.sendMessage('Block_%s' % (b['type'])
+        ioServer.sendMessageEvent('Block_%s' % (b['type']))
+        myWin.flip()
+        event.waitKeys(maxWait=float('inf'), 
+        keyList=None, 
+        timeStamped=True)
+    if b['type'] == 'LYRB':
+        niebieski.setPos([250, 0])
+        zolty.setPos([-250, 0])
+        niebieski.draw()
+        zolty.draw()
+        blokOGOLNA.draw()
+        #el_tracker.sendMessage('Block_%s' % (b['type']))
+        ioServer.sendMessageEvent('Block_%s' % (b['type']))
+        myWin.flip()
+        event.waitKeys(maxWait=float('inf'), 
+        keyList=None, 
+        timeStamped=True)
+
+    
+    # Create list for repeated trials
+    rep_list = [] 
+
+    trialrepeats = 10
+    fiftyprcnt = (50*(trialrepeats*len(conditions)))/100
+
+    alltrials = []
+    repNum = 0
+
+    trialNumber = 0
+
+    ###################### TRIAL
+
+
+    for loops in range(2):    
+
+        if loops == 0:
+            alltrials = (trialrepeats * conditions)
+        if loops == 1:
+            if repNum <= fiftyprcnt:
+                alltrials = (1 * rep_list)
+            if repNum > fiftyprcnt:
+                alltrials = random.sample(rep_list, round(fiftyprcnt))
+
+        random.shuffle(alltrials)
+        
+        for thisTrial in alltrials:
+                
+        
+            if thisTrial['side'] == 'left':
+                disc_1.setPos([-480,0])
+            if thisTrial['side'] == 'right':
+                disc_1.setPos([480,0])
+
+            if thisTrial['direction'] == 'left': 
+                drct = -(300/120)
+            if thisTrial['direction'] == 'right': 
+                drct = (300/120)
+                    
+            if thisTrial['color'] == 'yellow': 
+                color = 'yellow'
+            if thisTrial['color'] == 'blue': 
+                color = 'blue'
+            
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_congruent'
+                motion = 'motion_incongruent'
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_congruent'
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_congruent'
+                motion = 'motion_congruent'
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_incongruent'
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_incongruent' 
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_congruent'
+                motion = 'motion_congruent'
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_congruent'
+            if b['type'] == 'LYRB' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_congruent'
+                motion = 'motion_incongruent'
+                
+            
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_congruent' 
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_congruent'
+                motion = 'motion_incongruent'
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_incongruent'
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'left' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_congruent'
+                motion = 'motion_congruent'
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_congruent'
+                motion = 'motion_congruent'
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'left' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_incongruent'
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'yellow':
+                spatial = 'spatial_congruent'
+                motion = 'motion_incongruent'
+            if b['type'] == 'LBRY' and thisTrial['side'] == 'right' and thisTrial['direction'] == 'right' and thisTrial['color'] == 'blue':
+                spatial = 'spatial_incongruent'
+                motion = 'motion_congruent'
+                
+            
+            
+            disc_1.setFillColor([-1, -1, -1])
+            
+            ITI = random.choice(itis)
+            
+
+            kb.clearEvents()
+            event.clearEvents()
+            
+            
+            val1 = 0
+            val2 = 0
+            val3 = 0
+            valROI = 0
+            ans = 99
+                    
+            T3 = 100
+            T4 = 100
+            T5 = 100
+            relTimeLK = 100
+            relTimeRK = 100
+            pressTime = 100
+            breakVal = 0
+            keyPressed = 'none'
+            finseq = 'wrong'
+            RTRK = 0
+            RTLK = 0
+            AT = 0
+
+            
+            for frame in range(600):
+                if frame == 0:
+                    kb.clock.reset()
+                    #el_tracker.sendMessage('Trial_#_%d' % (trialNumber + 1))
+                    ioServer.sendMessageEvent('Trial_#_%d' % (trialNumber + 1))
+                            
+                key_lk = kb.getKeys(keyList=[LK], waitRelease=True)
+                key_rk = kb.getKeys(keyList=[RK], waitRelease=True)
+                
+                
+                # Draw instruction and check if the keys are pressed
+                if frame >=0 and frame <= 169:
+                    event.Mouse(visible=True, newPos=[0,0])
+                    press_instr.draw()
+                    myWin.flip()
+                    if event.getKeys(LK):
+                        val1 = 1
+                    if event.getKeys(RK):
+                        val2 = 1
+                
+                    if kb.getKeys(LK) or kb.getKeys(RK):
+                        ans = 'fingers'
+                        val3 = 1
+                        breakVal = 1
+                        break
+                
+                
+                
+                if frame >= 169 and frame <= 179:
+                    
+                    if val1 == 1 and val2 == 1:
+                        press_instr.draw()
+                        myWin.flip()   
+                    else:
+                        ans = 'fingers'
+                        breakVal = 1
+                        break
+
+                    if kb.getKeys(LK) or kb.getKeys(RK):
+                        ans = 'fingers'
+                        val3 = 1
+                        breakVal = 1
+                        break
+                ### roi - check eye gaze position
+                if frame >= 180 and keyPressed == 'none':
+                    # get last eye position
+                    gpos = eyetracker.getLastGazePosition()
+                    if isinstance(gpos, (tuple, list)):
+                        if roi.contains(gpos):
+                            pass
+                        else:
+                            ans = 'eyes'
+                            valROI = 1
+                            breakVal = 1
+                            break
+                ### Draw fixation point
+                if frame >= 180 and frame <= 269:
+                    if frame == 180:
+                        T3 = clock.getTime()
+                        event.Mouse(visible=False)
+                        #el_tracker.sendMessage('fix_point')
+                        ioServer.sendMessageEvent('fix_point')
+                        
+                    circle1.draw()
+                    lineY.draw()
+                    lineX.draw()
+                    circle2.draw()
+                    ###
+                    roi.draw()
+                    
+                    myWin.flip()
+                    if kb.getKeys(LK) or kb.getKeys(RK):
+                        ans = 'fingers'
+                        val3 = 1
+                        breakVal = 1
+                        break 
+                    
+                
+                if frame >= 270 and frame <= 600:
+                    if frame == 270:
+                        T4 = clock.getTime()
+                        #el_tracker.sendMessage('motion_starts')
+                        ioServer.sendMessageEvent('motion_starts')
+                    # Draw stimulus    
+                    disc_1.draw()
+                    
+                    
+                    circle1.draw()
+                    lineY.draw()
+                    lineX.draw()
+                    circle2.draw()
+                    
+                    myWin.flip()
+                    disc_1.setPos([disc_1.pos[0] + drct, disc_1.pos[1]]) # motion starts
+                    
+                    # if reaction is too fast - break
+                    if frame <= 359:
+                        if kb.getKeys(LK) or kb.getKeys(RK):
+                            ans = 'fingers'
+                            val3 = 1
+                            breakVal = 1
+                            break       
+                        
+                    # stimulus color change
+                    if frame == 359:
+                        T5 = clock.getTime()
+                        disc_1.setFillColor(color)
+                        #el_tracker.sendMessage('color_change')
+                        ioServer.sendMessageEvent('color_change')
+                        event.clearEvents(CL)
+                        event.clearEvents(CR)
+                    # Start collecting responses
+                    if frame >= 359:    
+                        if kb.getKeys(LK):
+                            relTimeLK = clock.getTime()
+                        if kb.getKeys(RK):
+                            relTimeRK = clock.getTime()
+                        
+                        if b['type'] == 'LYRB': 
+                            if thisTrial['color'] == 'yellow': 
+                                if event.getKeys(CL):
+                                    ans = 1
+                                    pressTime = clock.getTime()
+                                    keyPressed = CL
+                                    break
+                                if event.getKeys(CR):
+                                    ans = 0
+                                    pressTime = clock.getTime()
+                                    keyPressed = CR
+                                    break
+                            if thisTrial['color'] == 'blue': 
+                                if event.getKeys(CL):
+                                    ans = 0
+                                    pressTime = clock.getTime()
+                                    keyPressed = CL
+                                    break
+                                if event.getKeys(CR):
+                                    ans = 1
+                                    pressTime = clock.getTime()
+                                    keyPressed = CR
+                                    break
+                              
+                        if b['type'] == 'LBRY':        
+                            if thisTrial['color'] == 'yellow': 
+                                if event.getKeys(CL):
+                                    ans = 0
+                                    pressTime = clock.getTime()
+                                    keyPressed = CL
+                                    break
+                                if event.getKeys(CR):
+                                    ans = 1
+                                    pressTime = clock.getTime()
+                                    keyPressed = CR
+                                    break 
+                            if thisTrial['color'] == 'blue': 
+                                if event.getKeys(CL):
+                                    ans = 1
+                                    pressTime = clock.getTime()
+                                    keyPressed = CL
+                                    break
+                                if event.getKeys(CR):
+                                    ans = 0
+                                    pressTime = clock.getTime()
+                                    keyPressed = CR
+                                    break
+                    
+                #for keyLK in key_lk:
+                    #LKname = keyLK.name
+                    #LKrt = keyLK.rt
+                    #LKdur = keyLK.duration
+                    #LKtdown = keyLK.tDown
+                
+                #for keyRK in key_rk:
+                    #RKname = keyRK.name
+                    #RKrt = keyRK.rt
+                    #RKdur = keyRK.duration
+                    #RKtdown = keyRK.tDown
+                
+                # emergency exit
+                if event.getKeys('q'):
+                    quit()    
+            
+            # define values for detected times and keys and round them
+            fixDur = (round(round(T4,3)-round(T3, 3),3))*1000
+            blackMoveDur = (round(round(T5,3)-round(T4, 3),3))*1000
+            
+            if relTimeLK == 100:
+                RTLK = 'none'
+            else:
+                RTLK = (round(round(relTimeLK,3) - round(T5, 3),3))*1000   
+            
+            if relTimeRK == 100:
+                RTRK = 'none'
+            else:
+                RTRK = (round(round(relTimeRK,3) - round(T5, 3),3))*1000   
+            
+            LKrelGT = relTimeLK
+            RKrelGT = relTimeRK
+            KeyPressGT = pressTime
+            RAT = (round(round(pressTime,3)-round(T5, 3),3))*1000  #release and action time
+            if keyPressed == 'shift+k' and RTLK != 'none':
+                AT = RAT - RTLK
+            elif keyPressed == 'a' and RTRK != 'none':
+                AT = RAT - RTRK
+            else:
+                AT = 'none'
+            
+            if keyPressed == 'shift+k' and RTRK == 'none':
+                finseq = 'ok'
+            if keyPressed == 'a' and RTLK == 'none':
+                finseq = 'ok'
+            
+            if breakVal == 1:
+                fixDur = 'none'
+                blackMoveDur = 'none'
+                RTLK = 'none'
+                LKrelGT = 'none'
+                RTRK = 'none'
+                RKrelGT = 'none'
+                KeyPressGT = 'none'
+                RAT = 'none'
+                AT = 'none'
+                keyPressed = 'none'
+                repNum = repNum + 1
+
+            # Append failed trials into repeated trials list
+            if loops == 0:
+                if breakVal == 1:
+                    rep_list.append({'side': thisTrial['side'], 'direction': thisTrial['direction'], 'color': thisTrial['color']})
+                
+            # Present feedback based on error type
+            if ans == 99:
+                val1 = 0
+                for frames in range (120):
+                    NR_feedback.draw()
+                    myWin.flip()
+                    RAT = 'no answer'
+                    AT = 'no answer'
+                    KeyPressGT = 'no answer'
+
+                    
+                    if event.getKeys('q'):
+                        quit()
+            
+                    
+            if val3 == 1:
+                val1 = 0
+                for frames in range(120):
+                    za_szybko.draw()
+                    myWin.flip()
+                    
+                    if event.getKeys('q'):
+                        quit()
+                        
+            ### feedback eyetracker
+            if valROI == 1:
+                val1 = 0
+                for frames in range(120):
+                    wzrok_centrum.draw()
+                    myWin.flip()
+                    
+                    if event.getKeys('q'):
+                        quit()
+            ###
+            
+            if val1 == 0 or val2 == 0 or ans == 1 or ans == 0:
+                for frames in range (120):
+                    zluzuj_txt.draw()
+                    myWin.flip()
+                    
+                    if event.getKeys('q'):
+                        quit()
+            
+            
+            for frames in range(ITI):
+                myWin.flip()
+                
+                if event.getKeys('q'):
+                    quit()
+            
+            trialNumber = trialNumber + 1
+            
+
+            #el_tracker.sendMessage('trial_end')
+            ioServer.sendMessageEvent('trial_end')
+
+            # collect trial data into one line
+            line = [subj_id,
+                    age,
+                    gender,
+                    handedness,
+                    date_time_Now,
+                    experimentName,
+                    b['type'],
+                    trialNumber,
+                    fixDur,
+                    blackMoveDur,
+                    T5,
+                    RTLK,
+                    LKrelGT,
+                    RTRK,
+                    RKrelGT,
+                    RAT,
+                    AT,
+                    ans,
+                    keyPressed,
+                    KeyPressGT,
+                    finseq,
+                    thisTrial['side'],
+                    thisTrial['direction'],
+                    thisTrial['color'],
+                    spatial,
+                    motion,
+                    breakVal
+                           ]
+            # turn all values into a string
+            line = map(str, line)
+            # merge all individual values into a single string,
+            # separated by tabs
+            line = '\t'.join(line)
+            # add a newline ('\n') to the string
+            line += '\n'
+            # write the data string to the log file
+            log.write(line)
+            
+            
+
+            
+            
+    ############## TRIAL END    
+
+    koniecBloku.draw()
+    #el_tracker.sendMessage('Block_%s_END' % (b['type']))
+    ioServer.sendMessageEvent('Block_%s_END' % (b['type']))
+    myWin.flip()
+    event.waitKeys(maxWait=float('inf'), 
+        keyList=None, 
+        timeStamped=True)
+    
+    #stop recording
+    eyetracker.setRecordingState(False)
+            
+
+# close the log file
+log.close()
+
+
+# move beh data to DATA_BEH folder
+shutil.move(subj_id+'_INbeh.tsv', os.getcwd()+'/DATA_BEH')
+
+
+
+for frames in range(60):
+    koniec.draw()
+    myWin.flip()
